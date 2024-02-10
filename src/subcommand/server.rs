@@ -173,7 +173,7 @@ pub struct Server {
   pub(crate) no_sync: bool,
   #[arg(
     long,
-    help = "Proxy recursive endpoints to this host. `/content` only if it would be a 404."
+    help = "Proxy `/content/` to this host."
   )]
   pub(crate) proxy_content: Option<Url>,
 }
