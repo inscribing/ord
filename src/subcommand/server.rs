@@ -213,7 +213,7 @@ impl Server {
         index_sats: index.has_sat_index(),
         json_api_enabled: !self.disable_json_api,
         decompress: self.decompress,
-        proxy: self.proxy_content.clone(),
+        proxy_content: self.proxy_content.clone(),
       });
 
       let router = Router::new()
@@ -1147,7 +1147,7 @@ impl Server {
 
       let mut inscription = match index.get_inscription_by_id(inscription_id)? {
         None => {
-          if let Some(proxy) = server_config.proxy.clone() {
+          if let Some(proxy) = server_config.proxy_content.clone() {
             return Ok(
               Self::content_proxy(inscription_id, proxy)?
                 .ok_or_not_found(|| format!("inscription {inscription_id} content"))?
