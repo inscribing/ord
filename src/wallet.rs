@@ -91,7 +91,7 @@ impl Wallet {
     Ok(output_json)
   }
 
-  pub(crate) fn get_unspent_outputs(&self) -> Result<BTreeMap<OutPoint, Amount>> {
+  pub(crate) fn get_unspent_outputs(&self) -> Result<BTreeMap<OutPoint, TxOut>> {
     let mut utxos = BTreeMap::new();
     utxos.extend(
       self
@@ -100,9 +100,12 @@ impl Wallet {
         .into_iter()
         .map(|utxo| {
           let outpoint = OutPoint::new(utxo.txid, utxo.vout);
-          let amount = utxo.amount;
+          let txout = TxOut {
+            script_pubkey: utxo.script_pub_key,
+            value: utxo.amount.to_sat(),
+          };
 
-          (outpoint, amount)
+          (outpoint, txout)
         }),
     );
 
@@ -111,13 +114,11 @@ impl Wallet {
     for outpoint in locked_utxos {
       utxos.insert(
         outpoint,
-        Amount::from_sat(
-          self
-            .bitcoin_client()?
-            .get_raw_transaction(&outpoint.txid, None)?
-            .output[TryInto::<usize>::try_into(outpoint.vout).unwrap()]
-          .value,
-        ),
+        self
+          .bitcoin_client()?
+          .get_raw_transaction(&outpoint.txid, None)?
+          .output[TryInto::<usize>::try_into(outpoint.vout).unwrap()]
+        .clone(),
       );
     }
 
@@ -149,7 +150,7 @@ impl Wallet {
   pub(crate) fn find_sat_in_outputs(
     &self,
     sat: Sat,
-    utxos: &BTreeMap<OutPoint, Amount>,
+    utxos: &BTreeMap<OutPoint, TxOut>,
   ) -> Result<SatPoint> {
     ensure!(
       self.has_sat_index()?,
@@ -212,11 +213,14 @@ impl Wallet {
     Ok(serde_json::from_str(&response.text()?)?)
   }
 
-  pub(crate) fn get_inscriptions(&self) -> Result<BTreeMap<SatPoint, InscriptionId>> {
+  pub(crate) fn get_inscriptions(&self) -> Result<BTreeMap<SatPoint, Vec<InscriptionId>>> {
     let mut inscriptions = BTreeMap::new();
     for output in self.get_unspent_outputs()?.keys() {
       for inscription in self.get_output(output)?.inscriptions {
-        inscriptions.insert(self.get_inscription_satpoint(inscription)?, inscription);
+        inscriptions
+          .entry(self.get_inscription_satpoint(inscription)?)
+          .or_insert_with(Vec::new)
+          .push(inscription);
       }
     }
 
@@ -304,7 +308,7 @@ impl Wallet {
   pub(crate) fn get_parent_info(
     &self,
     parent: Option<InscriptionId>,
-    utxos: &BTreeMap<OutPoint, Amount>,
+    utxos: &BTreeMap<OutPoint, TxOut>,
   ) -> Result<Option<ParentInfo>> {
     if let Some(parent_id) = parent {
       let satpoint = self
@@ -404,9 +408,10 @@ impl Wallet {
 
     client.create_wallet(&self.name, None, Some(true), None, None)?;
 
-    for descriptor in descriptors {
-      client.import_descriptors(ImportDescriptors {
-        descriptor: descriptor.desc,
+    let descriptors = descriptors
+      .into_iter()
+      .map(|descriptor| ImportDescriptors {
+        descriptor: descriptor.desc.clone(),
         timestamp: descriptor.timestamp,
         active: Some(true),
         range: descriptor.range.map(|(start, end)| {
@@ -420,8 +425,10 @@ impl Wallet {
           .map(|next| usize::try_from(next).unwrap_or(0)),
         internal: descriptor.internal,
         label: None,
-      })?;
-    }
+      })
+      .collect::<Vec<ImportDescriptors>>();
+
+    client.import_descriptors(descriptors)?;
 
     Ok(())
   }
@@ -490,7 +497,7 @@ impl Wallet {
     self
       .options
       .bitcoin_rpc_client(Some(self.name.clone()))?
-      .import_descriptors(ImportDescriptors {
+      .import_descriptors(vec![ImportDescriptors {
         descriptor: descriptor.to_string_with_secret(&key_map),
         timestamp: Timestamp::Now,
         active: Some(true),
@@ -498,7 +505,7 @@ impl Wallet {
         next_index: None,
         internal: Some(change),
         label: None,
-      })?;
+      }])?;
 
     Ok(())
   }
