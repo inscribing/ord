@@ -47,6 +47,7 @@ use {
   lazy_static::lazy_static,
   ordinals::{DeserializeFromStr, Epoch, Height, Rarity, Sat, SatPoint},
   regex::Regex,
+  reqwest::Url,
   serde::{Deserialize, Deserializer, Serialize, Serializer},
   std::{
     cmp,
