@@ -416,19 +416,26 @@ fn inscribe_with_dry_run_flag() {
 
   bitcoin_rpc_server.mine_blocks(1);
 
-  CommandBuilder::new("wallet inscribe --dry-run --file degenerate.png --fee-rate 1")
-    .write("degenerate.png", [1; 520])
-    .bitcoin_rpc_server(&bitcoin_rpc_server)
-    .ord_rpc_server(&ord_rpc_server)
-    .run_and_deserialize_output::<Inscribe>();
+  let inscribe =
+    CommandBuilder::new("wallet inscribe --dry-run --file degenerate.png --fee-rate 1")
+      .write("degenerate.png", [1; 520])
+      .bitcoin_rpc_server(&bitcoin_rpc_server)
+      .ord_rpc_server(&ord_rpc_server)
+      .run_and_deserialize_output::<Inscribe>();
+
+  assert!(inscribe.commit_psbt.is_some());
+  assert!(inscribe.reveal_psbt.is_some());
 
   assert!(bitcoin_rpc_server.mempool().is_empty());
 
-  CommandBuilder::new("wallet inscribe --file degenerate.png --fee-rate 1")
+  let inscribe = CommandBuilder::new("wallet inscribe --file degenerate.png --fee-rate 1")
     .write("degenerate.png", [1; 520])
     .bitcoin_rpc_server(&bitcoin_rpc_server)
     .ord_rpc_server(&ord_rpc_server)
     .run_and_deserialize_output::<Inscribe>();
+
+  assert!(inscribe.commit_psbt.is_none());
+  assert!(inscribe.reveal_psbt.is_none());
 
   assert_eq!(bitcoin_rpc_server.mempool().len(), 2);
 }
@@ -643,7 +650,7 @@ fn inscribe_with_parent_inscription_and_fee_rate() {
   ord_rpc_server.assert_response_regex(
     format!("/inscription/{}", child_output.inscriptions[0].id),
     format!(
-      ".*<dt>parent</dt>.*<a class=monospace href=/inscription/{}>.*",
+      ".*<dt>parent</dt>.*<a href=/inscription/{}>.*",
       child_output.parent.unwrap()
     ),
   );
@@ -861,6 +868,9 @@ fn cbor_metadata_appears_on_inscription_page() {
 #[test]
 fn error_message_when_parsing_json_metadata_is_reasonable() {
   let bitcoin_rpc_server = test_bitcoincore_rpc::spawn();
+  let ord_rpc_server = TestServer::spawn_with_server_args(&bitcoin_rpc_server, &[], &[]);
+
+  create_wallet(&bitcoin_rpc_server, &ord_rpc_server);
 
   CommandBuilder::new(
     "wallet inscribe --fee-rate 1 --json-metadata metadata.json --file content.png",
@@ -868,6 +878,7 @@ fn error_message_when_parsing_json_metadata_is_reasonable() {
   .write("content.png", [1; 520])
   .write("metadata.json", "{")
   .bitcoin_rpc_server(&bitcoin_rpc_server)
+  .ord_rpc_server(&ord_rpc_server)
   .stderr_regex(".*failed to parse JSON metadata.*")
   .expected_exit_code(1)
   .run_and_extract_stdout();
@@ -876,6 +887,9 @@ fn error_message_when_parsing_json_metadata_is_reasonable() {
 #[test]
 fn error_message_when_parsing_cbor_metadata_is_reasonable() {
   let bitcoin_rpc_server = test_bitcoincore_rpc::spawn();
+  let ord_rpc_server = TestServer::spawn_with_server_args(&bitcoin_rpc_server, &[], &[]);
+
+  create_wallet(&bitcoin_rpc_server, &ord_rpc_server);
 
   CommandBuilder::new(
     "wallet inscribe --fee-rate 1 --cbor-metadata metadata.cbor --file content.png",
@@ -883,6 +897,7 @@ fn error_message_when_parsing_cbor_metadata_is_reasonable() {
   .write("content.png", [1; 520])
   .write("metadata.cbor", [0x61])
   .bitcoin_rpc_server(&bitcoin_rpc_server)
+  .ord_rpc_server(&ord_rpc_server)
   .stderr_regex(".*failed to parse CBOR metadata.*")
   .expected_exit_code(1)
   .run_and_extract_stdout();
@@ -2199,7 +2214,7 @@ fn batch_inscribe_with_satpoints_with_parent() {
     offset: 0,
   };
 
-  let sat_1 = serde_json::from_str::<OutputJson>(
+  let sat_1 = serde_json::from_str::<api::Output>(
     &ord_rpc_server
       .json_request(format!("/output/{}", satpoint_1.outpoint))
       .text()
@@ -2210,7 +2225,7 @@ fn batch_inscribe_with_satpoints_with_parent() {
   .unwrap()[0]
     .0;
 
-  let sat_2 = serde_json::from_str::<OutputJson>(
+  let sat_2 = serde_json::from_str::<api::Output>(
     &ord_rpc_server
       .json_request(format!("/output/{}", satpoint_2.outpoint))
       .text()
@@ -2221,7 +2236,7 @@ fn batch_inscribe_with_satpoints_with_parent() {
   .unwrap()[0]
     .0;
 
-  let sat_3 = serde_json::from_str::<OutputJson>(
+  let sat_3 = serde_json::from_str::<api::Output>(
     &ord_rpc_server
       .json_request(format!("/output/{}", satpoint_3.outpoint))
       .text()
@@ -2381,7 +2396,7 @@ fn batch_inscribe_with_satpoints_with_different_sizes() {
     offset: 0,
   };
 
-  let output_1 = serde_json::from_str::<OutputJson>(
+  let output_1 = serde_json::from_str::<api::Output>(
     &ord_rpc_server
       .json_request(format!("/output/{}", satpoint_1.outpoint))
       .text()
@@ -2390,7 +2405,7 @@ fn batch_inscribe_with_satpoints_with_different_sizes() {
   .unwrap();
   assert_eq!(output_1.value, 25 * COIN_VALUE);
 
-  let output_2 = serde_json::from_str::<OutputJson>(
+  let output_2 = serde_json::from_str::<api::Output>(
     &ord_rpc_server
       .json_request(format!("/output/{}", satpoint_2.outpoint))
       .text()
@@ -2399,7 +2414,7 @@ fn batch_inscribe_with_satpoints_with_different_sizes() {
   .unwrap();
   assert_eq!(output_2.value, COIN_VALUE);
 
-  let output_3 = serde_json::from_str::<OutputJson>(
+  let output_3 = serde_json::from_str::<api::Output>(
     &ord_rpc_server
       .json_request(format!("/output/{}", satpoint_3.outpoint))
       .text()

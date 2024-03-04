@@ -44,15 +44,11 @@ impl Batch {
     utxos: &BTreeMap<OutPoint, TxOut>,
     wallet: &Wallet,
   ) -> SubcommandResult {
-    let wallet_inscriptions = wallet.get_inscriptions()?;
-
     let commit_tx_change = [wallet.get_change_address()?, wallet.get_change_address()?];
-
-    let bitcoin_client = wallet.bitcoin_client()?;
 
     let (commit_tx, reveal_tx, recovery_key_pair, total_fees) = self
       .create_batch_inscription_transactions(
-        wallet_inscriptions,
+        wallet.inscriptions().clone(),
         wallet.chain(),
         locked_utxos.clone(),
         runic_utxos,
@@ -61,18 +57,18 @@ impl Batch {
       )?;
 
     if self.dry_run {
-      let commit_psbt = bitcoin_client
+      let commit_psbt = wallet
+        .bitcoin_client()
         .wallet_process_psbt(
-          &base64::engine::general_purpose::STANDARD.encode(
-            Psbt::from_unsigned_tx(Self::remove_witnesses(commit_tx.clone())?)?.serialize(),
-          ),
+          &base64::engine::general_purpose::STANDARD
+            .encode(Psbt::from_unsigned_tx(Self::remove_witnesses(commit_tx.clone()))?.serialize()),
           Some(false),
           None,
           None,
         )?
         .psbt;
 
-      let reveal_psbt = Psbt::from_unsigned_tx(Self::remove_witnesses(reveal_tx.clone())?)?;
+      let reveal_psbt = Psbt::from_unsigned_tx(Self::remove_witnesses(reveal_tx.clone()))?;
 
       return Ok(Some(Box::new(self.output(
         commit_tx.txid(),
@@ -84,11 +80,12 @@ impl Batch {
       ))));
     }
 
-    let signed_commit_tx = bitcoin_client
+    let signed_commit_tx = wallet
+      .bitcoin_client()
       .sign_raw_transaction_with_wallet(&commit_tx, None, None)?
       .hex;
 
-    let result = bitcoin_client.sign_raw_transaction_with_wallet(
+    let result = wallet.bitcoin_client().sign_raw_transaction_with_wallet(
       &reveal_tx,
       Some(
         &commit_tx
@@ -118,9 +115,14 @@ impl Batch {
       Self::backup_recovery_key(wallet, recovery_key_pair)?;
     }
 
-    let commit = bitcoin_client.send_raw_transaction(&signed_commit_tx)?;
+    let commit = wallet
+      .bitcoin_client()
+      .send_raw_transaction(&signed_commit_tx)?;
 
-    let reveal = match bitcoin_client.send_raw_transaction(&signed_reveal_tx) {
+    let reveal = match wallet
+      .bitcoin_client()
+      .send_raw_transaction(&signed_reveal_tx)
+    {
       Ok(txid) => txid,
       Err(err) => {
         return Err(anyhow!(
@@ -139,12 +141,12 @@ impl Batch {
     ))))
   }
 
-  fn remove_witnesses(mut transaction: Transaction) -> Result<Transaction> {
+  fn remove_witnesses(mut transaction: Transaction) -> Transaction {
     for txin in transaction.input.iter_mut() {
       txin.witness = Witness::new();
     }
 
-    Ok(transaction)
+    transaction
   }
 
   fn output(
@@ -155,7 +157,7 @@ impl Batch {
     reveal_psbt: Option<String>,
     total_fees: u64,
     inscriptions: Vec<Inscription>,
-  ) -> super::Output {
+  ) -> Output {
     let mut inscriptions_output = Vec::new();
     for index in 0..inscriptions.len() {
       let index = u32::try_from(index).unwrap();
@@ -197,7 +199,7 @@ impl Batch {
       });
     }
 
-    super::Output {
+    Output {
       commit,
       commit_psbt,
       reveal,
@@ -286,16 +288,16 @@ impl Batch {
         .ok_or_else(|| anyhow!("wallet contains no cardinal utxos"))?
     };
 
-    let mut reinscription = self.mode == Mode::SameSat;
+    let mut reinscription = false || self.mode == Mode::SameSat;
 
     for (inscribed_satpoint, inscription_ids) in &wallet_inscriptions {
       if *inscribed_satpoint == satpoint {
         reinscription = true;
         if self.reinscribe {
           continue;
-        } else {
-          bail!("sat at {} already inscribed", satpoint);
         }
+
+        bail!("sat at {} already inscribed", satpoint);
       }
 
       if inscribed_satpoint.outpoint == satpoint.outpoint {
@@ -516,20 +518,21 @@ impl Batch {
       wallet.chain().network(),
     );
 
-    let bitcoin_client = wallet.bitcoin_client()?;
+    let info = wallet
+      .bitcoin_client()
+      .get_descriptor_info(&format!("rawtr({})", recovery_private_key.to_wif()))?;
 
-    let info =
-      bitcoin_client.get_descriptor_info(&format!("rawtr({})", recovery_private_key.to_wif()))?;
-
-    let response = bitcoin_client.import_descriptors(vec![ImportDescriptors {
-      descriptor: format!("rawtr({})#{}", recovery_private_key.to_wif(), info.checksum),
-      timestamp: Timestamp::Now,
-      active: Some(false),
-      range: None,
-      next_index: None,
-      internal: Some(false),
-      label: Some("commit tx recovery key".to_string()),
-    }])?;
+    let response = wallet
+      .bitcoin_client()
+      .import_descriptors(vec![ImportDescriptors {
+        descriptor: format!("rawtr({})#{}", recovery_private_key.to_wif(), info.checksum),
+        timestamp: Timestamp::Now,
+        active: Some(false),
+        range: None,
+        next_index: None,
+        internal: Some(false),
+        label: Some("commit tx recovery key".to_string()),
+      }])?;
 
     for result in response {
       if !result.success {

@@ -1,7 +1,4 @@
-use {
-  super::*, crate::command_builder::ToArgs, ciborium::value::Integer,
-  ord::subcommand::wallet::send::Output,
-};
+use {super::*, ciborium::value::Integer, ord::subcommand::wallet::send::Output};
 
 #[test]
 fn run() {
@@ -282,6 +279,57 @@ fn inscription_metadata() {
 }
 
 #[test]
+fn recursive_inscription_endpoint() {
+  let bitcoin_rpc_server = test_bitcoincore_rpc::spawn();
+  let ord_rpc_server =
+    TestServer::spawn_with_server_args(&bitcoin_rpc_server, &["--index-sats"], &[]);
+
+  create_wallet(&bitcoin_rpc_server, &ord_rpc_server);
+
+  bitcoin_rpc_server.mine_blocks(1);
+
+  let output = CommandBuilder::new("wallet inscribe --fee-rate 1 --file foo.txt")
+    .write("foo.txt", "FOO")
+    .bitcoin_rpc_server(&bitcoin_rpc_server)
+    .ord_rpc_server(&ord_rpc_server)
+    .run_and_deserialize_output::<Inscribe>();
+
+  bitcoin_rpc_server.mine_blocks(1);
+
+  let inscription = output.inscriptions.first().unwrap();
+  let response = ord_rpc_server.request(format!("/r/inscription/{}", inscription.id));
+
+  assert_eq!(response.status(), StatusCode::OK);
+  assert_eq!(
+    response.headers().get("content-type").unwrap(),
+    "application/json"
+  );
+
+  let inscription_recursive_json: api::InscriptionRecursive =
+    serde_json::from_str(&response.text().unwrap()).unwrap();
+
+  pretty_assert_eq!(
+    inscription_recursive_json,
+    api::InscriptionRecursive {
+      charms: vec!["coin".into(), "uncommon".into()],
+      content_type: Some("text/plain;charset=utf-8".to_string()),
+      content_length: Some(3),
+      fee: 138,
+      height: 2,
+      number: 0,
+      output: inscription.location.outpoint,
+      sat: Some(Sat(50 * COIN_VALUE)),
+      satpoint: SatPoint {
+        outpoint: inscription.location.outpoint,
+        offset: 0,
+      },
+      timestamp: 2,
+      value: Some(10000),
+    }
+  )
+}
+
+#[test]
 fn inscriptions_page() {
   let bitcoin_rpc_server = test_bitcoincore_rpc::spawn();
   let ord_rpc_server = TestServer::spawn(&bitcoin_rpc_server);
@@ -351,64 +399,6 @@ fn expected_sat_time_is_rounded() {
     "/sat/2099999997689999",
     r".*<dt>timestamp</dt><dd><time>.* \d+:\d+:\d+ UTC</time> \(expected\)</dd>.*",
   );
-}
-
-#[test]
-#[ignore]
-fn server_runs_with_rpc_user_and_pass_as_env_vars() {
-  let rpc_server = test_bitcoincore_rpc::spawn();
-  rpc_server.mine_blocks(1);
-
-  let tempdir = TempDir::new().unwrap();
-  let port = TcpListener::bind("127.0.0.1:0")
-    .unwrap()
-    .local_addr()
-    .unwrap()
-    .port();
-
-  let mut child = Command::new(executable_path("ord"))
-    .args(format!(
-      "--rpc-url {} --bitcoin-data-dir {} --data-dir {} server --http-port {port} --address 127.0.0.1",
-      rpc_server.url(),
-      tempdir.path().display(),
-      tempdir.path().display()).to_args()
-      )
-      .env("ORD_BITCOIN_RPC_PASS", "bar")
-      .env("ORD_BITCOIN_RPC_USER", "foo")
-      .env("ORD_INTEGRATION_TEST", "1")
-      .current_dir(&tempdir)
-      .spawn().unwrap();
-
-  for i in 0.. {
-    match reqwest::blocking::get(format!("http://127.0.0.1:{port}/status")) {
-      Ok(_) => break,
-      Err(err) => {
-        if i == 400 {
-          panic!("ord server failed to start: {err}");
-        }
-      }
-    }
-
-    thread::sleep(Duration::from_millis(50));
-  }
-
-  rpc_server.mine_blocks(1);
-
-  for i in 0.. {
-    let response = reqwest::blocking::get(format!("http://127.0.0.1:{port}/blockcount")).unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    if response.text().unwrap() == "2" {
-      break;
-    }
-
-    if i == 400 {
-      panic!("ord server failed to sync");
-    }
-
-    thread::sleep(Duration::from_millis(50));
-  }
-
-  child.kill().unwrap();
 }
 
 #[test]
@@ -581,6 +571,50 @@ fn run_no_sync() {
 
     thread::sleep(Duration::from_millis(50));
   }
+
+  child.kill().unwrap();
+}
+
+#[test]
+fn authentication() {
+  let rpc_server = test_bitcoincore_rpc::spawn();
+
+  let port = TcpListener::bind("127.0.0.1:0")
+    .unwrap()
+    .local_addr()
+    .unwrap()
+    .port();
+
+  let builder = CommandBuilder::new(format!(
+    " --username foo --password bar server --address 127.0.0.1 --http-port {port}"
+  ))
+  .bitcoin_rpc_server(&rpc_server);
+
+  let mut command = builder.command();
+
+  let mut child = command.spawn().unwrap();
+
+  for attempt in 0.. {
+    if let Ok(response) = reqwest::blocking::get(format!("http://localhost:{port}")) {
+      if response.status() == 401 {
+        break;
+      }
+    }
+
+    if attempt == 100 {
+      panic!("Server did not respond");
+    }
+
+    thread::sleep(Duration::from_millis(50));
+  }
+
+  let response = reqwest::blocking::Client::new()
+    .get(format!("http://localhost:{port}"))
+    .basic_auth("foo", Some("bar"))
+    .send()
+    .unwrap();
+
+  assert_eq!(response.status(), 200);
 
   child.kill().unwrap();
 }
