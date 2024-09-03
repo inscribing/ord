@@ -33,6 +33,7 @@ ufw default allow outgoing
 ufw default deny incoming
 
 ufw allow 8080
+ufw allow 8443
 ufw allow http
 ufw allow https
 ufw allow ssh
@@ -40,27 +41,27 @@ ufw allow ssh
 case $CHAIN in
   main)
     COOKIE_FILE_DIR=/var/lib/bitcoind
-    CSP_ORIGIN=ordinals.com
+    CSP_ORIGIN=ord.inscribing.com
     ufw allow 8333
     ;;
   regtest)
     COOKIE_FILE_DIR=/var/lib/bitcoind/regtest
-    CSP_ORIGIN=regtest.ordinals.com
+    CSP_ORIGIN=regtest.ord.inscribing.com
     ufw allow 18444
     ;;
   signet)
     COOKIE_FILE_DIR=/var/lib/bitcoind/signet
-    CSP_ORIGIN=signet.ordinals.com
+    CSP_ORIGIN=signet.ord.inscribing.com
     ufw allow 38333
     ;;
   test)
     COOKIE_FILE_DIR=/var/lib/bitcoind/testnet3
-    CSP_ORIGIN=testnet.ordinals.com
+    CSP_ORIGIN=testnet.ord.inscribing.com
     ufw allow 18333
     ;;
   testnet4)
     COOKIE_FILE_DIR=/var/lib/bitcoind/testnet4
-    CSP_ORIGIN=testnet4.ordinals.com
+    CSP_ORIGIN=testnet4.ord.inscribing.com
     ufw allow 48333
     ;;
   *)
@@ -78,10 +79,6 @@ OVERRIDE=/etc/systemd/system/ord.service.d/override.conf
 echo '[Service]' > $OVERRIDE
 echo "Environment=CHAIN=$CHAIN" >> $OVERRIDE
 echo "Environment=CSP_ORIGIN=$CSP_ORIGIN" >> $OVERRIDE
-
-if [[ $CHAIN == main && $DOMAIN != charlie.ordinals.net ]]; then
-  echo Environment=ORD_SERVER_DISABLE_JSON_API=true >> $OVERRIDE
-fi
 
 cp $OVERRIDE /etc/systemd/system/bitcoind.service.d/override.conf
 
@@ -144,7 +141,7 @@ systemctl daemon-reload
 systemctl enable ord
 systemctl restart ord
 
-while ! curl --fail https://$DOMAIN/status > /dev/null; do
-  echo "Waiting for ord at https://$DOMAIN/status…"
+while ! curl --fail https://$CSP_ORIGIN/status > /dev/null; do
+  echo "Waiting for ord at https://$CSP_ORIGIN/status…"
   sleep 1
 done

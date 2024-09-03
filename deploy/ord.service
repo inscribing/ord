@@ -17,7 +17,7 @@ ExecStart=/usr/local/bin/ord \
   --index-runes \
   --index-sats \
   server \
-  --acme-contact mailto:casey@rodarmor.com \
+  --acme-contact mailto:raphael@inscribing.com \
   --csp-origin https://${CSP_ORIGIN} \
   --http \
   --https
