@@ -1,4 +1,4 @@
-mod atlantis
+mod inscribing
 
 set positional-arguments
 
