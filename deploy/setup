@@ -14,7 +14,7 @@ export DEBIAN_FRONTEND=noninteractive
 
 touch ~/.hushlogin
 
-# hostnamectl set-hostname $DOMAIN
+hostnamectl set-hostname $DOMAIN
 
 apt-get install --yes \
   acl \
