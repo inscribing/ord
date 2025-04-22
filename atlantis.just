@@ -1,4 +1,4 @@
-deploy-ordinals domain="agora.ephemera.gallery" remote="inscribing/ord" branch="master" chain="main":
+deploy-ordinals domain="backup.ord.inscribing.com" remote="inscribing/ord" branch="deploy-new-server" chain="main":
   ssh root@{{domain}} 'mkdir -p deploy \
     && apt-get update --yes \
     && apt-get upgrade --yes \
