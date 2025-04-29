@@ -41,27 +41,27 @@ ufw allow ssh
 case $CHAIN in
   main)
     COOKIE_FILE_DIR=/var/lib/bitcoind
-    CSP_ORIGIN=backup.ord.inscribing.com
+    CSP_ORIGIN=ord.inscribing.com
     ufw allow 8333
     ;;
   regtest)
     COOKIE_FILE_DIR=/var/lib/bitcoind/regtest
-    CSP_ORIGIN=regtest.backup.ord.inscribing.com
+    CSP_ORIGIN=regtest.ord.inscribing.com
     ufw allow 18444
     ;;
   signet)
     COOKIE_FILE_DIR=/var/lib/bitcoind/signet
-    CSP_ORIGIN=signet.backup.ord.inscribing.com
+    CSP_ORIGIN=signet.ord.inscribing.com
     ufw allow 38333
     ;;
   test)
     COOKIE_FILE_DIR=/var/lib/bitcoind/testnet3
-    CSP_ORIGIN=testnet.backup.ord.inscribing.com
+    CSP_ORIGIN=testnet.ord.inscribing.com
     ufw allow 18333
     ;;
   testnet4)
     COOKIE_FILE_DIR=/var/lib/bitcoind/testnet4
-    CSP_ORIGIN=testnet4.backup.ord.inscribing.com
+    CSP_ORIGIN=testnet4.ord.inscribing.com
     ufw allow 48333
     ;;
   *)

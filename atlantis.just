@@ -1,4 +1,4 @@
-deploy-ord domain="backup.ord.inscribing.com" remote="inscribing/ord" branch="deploy-new-server" chain="main":
+deploy-ord domain="ord.inscribing.com" remote="inscribing/ord" branch="deploy-new-server" chain="main":
   ssh root@{{domain}} 'mkdir -p deploy \
     && apt-get update --yes \
     && apt-get upgrade --yes \
